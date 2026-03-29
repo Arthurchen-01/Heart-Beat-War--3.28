@@ -1,0 +1,29 @@
+{
+  "agents": {
+    "defaults": {
+      "workspace": "/root/.openclaw/workspace-agent3",
+      "model": {
+        "primary": "claude/claude-sonnet-4-6"
+      },
+      "heartbeat": {
+        "every": "5m",
+        "target": "feishu",
+        "directPolicy": "allow",
+        "lightContext": true,
+        "isolatedSession": true,
+        "prompt": "Read HEARTBEAT.md if it exists (workspace context). Follow it strictly. Do not infer or repeat old tasks from prior chats. If nothing needs attention, reply HEARTBEAT_OK.",
+        "ackMaxChars": 300
+      }
+    }
+  },
+  "channels": {
+    "feishu": {
+      "enabled": true,
+      "appId": "YOUR_APP_ID",
+      "appSecret": "YOUR_APP_SECRET"
+    }
+  },
+  "gateway": {
+    "mode": "local"
+  }
+}
