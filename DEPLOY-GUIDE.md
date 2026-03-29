@@ -1,0 +1,593 @@
+# 多 Agent 协作部署指南
+
+> 基于 Heart-Beat-War 模板，3 个 Agent 通过 GitHub 仓库协作完成软件开发任务。
+
+---
+
+## 架构总览
+
+```
+本地（Windows）        二哥（VM-0-7-ubuntu）      三哥（VM-0-5-ubuntu）
+┌─────────────┐      ┌──────────────────┐      ┌──────────────────┐
+│  Agent 1    │      │     Agent 2      │      │     Agent 3      │
+│  总架构师    │      │     执行者        │      │     审查者        │
+│             │      │                  │      │                  │
+│ 读需求      │      │ 读任务卡          │      │ 读全部           │
+│ 写架构      │      │ 执行代码          │      │ 写审查报告        │
+│ 拆任务卡    │      │ 写执行结果        │      │ 批准/打回         │
+│ 用飞书      │      │ 用微信            │      │ 用飞书            │
+│ 模型最好    │      │ 模型可以便宜点    │      │ 模型中等          │
+└──────┬──────┘      └────────┬─────────┘      └────────┬─────────┘
+       │                      │                          │
+       └──────────────────────┼──────────────────────────┘
+                              │
+                    ┌─────────▼─────────┐
+                    │   GitHub 仓库      │
+                    │   （共享任务板）    │
+                    │                   │
+                    │  00_input/        │  ← 用户写需求
+                    │  10_architecture/ │  ← Agent 1 写
+                    │  20_tasks/        │  ← Agent 1 写，Agent 3 删
+                    │  30_execution/    │  ← Agent 2 写
+                    │  40_review/       │  ← Agent 3 写
+                    └───────────────────┘
+```
+
+## 协作流程
+
+```
+Agent 1（本地）: 读 00_input/ → 写 10_architecture/ → 写 20_tasks/task-xxx.md
+                                              ↓
+Agent 2（二哥）: git pull → 发现新任务卡 → 执行 → 写 30_execution/ → git push
+                                              ↓
+Agent 3（三哥）: git pull → 看到执行结果 → 审查 → 写 40_review/
+              ↓ 通过                    ↓ 不通过
+         删 task 卡                  通知 Agent 1 重新拆任务
+```
+
+---
+
+## 第一步：准备 GitHub 仓库
+
+1. 创建一个私有仓库（或使用已有仓库）
+2. 创建以下目录结构：
+
+```
+项目仓库/
+├── 00_input/           # 用户写需求
+│   └── requirement.md
+├── 10_architecture/    # Agent 1 写架构
+├── 20_tasks/           # Agent 1 写任务卡
+├── 30_execution/       # Agent 2 写执行结果
+├── 40_review/          # Agent 3 写审查报告
+└── system/
+    ├── workflow-rules.md
+    └── naming-rules.md
+```
+
+3. 每台机器都 clone 这个仓库
+4. 配置 git 凭证（每台机器都要能 push）：
+
+```bash
+git config --global user.name "agent-x"
+git config --global user.email "your@email.com"
+# 用 token 推送
+git remote set-url origin https://<your-token>@github.com/<owner>/<repo>.git
+```
+
+---
+
+## 第二步：本地（Windows）— Agent 1 总架构师
+
+### 2.1 安装 OpenClaw
+
+```powershell
+# 如果还没装
+npm install -g openclaw
+
+# 验证
+openclaw --version
+```
+
+### 2.2 配置 OpenClaw
+
+编辑 `C:\Users\25472\.config\kilo\openclaw.json`（或 `~/.openclaw/openclaw.json`）：
+
+```json
+{
+  "agents": {
+    "defaults": {
+      "model": {
+        "primary": "claude/claude-sonnet-4-6"
+      },
+      "workspace": "C:/Users/25472/.openclaw/workspace-agent1",
+      "heartbeat": {
+        "every": "5m",
+        "target": "feishu",
+        "directPolicy": "allow",
+        "lightContext": true
+      }
+    }
+  },
+  "channels": {
+    "feishu": {
+      "enabled": true,
+      "appId": "<你的飞书 App ID>",
+      "appSecret": "<你的飞书 App Secret>"
+    }
+  }
+}
+```
+
+### 2.3 创建 Agent 1 的 Workspace
+
+```powershell
+# 创建 workspace 目录
+mkdir C:\Users\25472\.openclaw\workspace-agent1
+
+# clone 项目仓库
+cd C:\Users\25472\.openclaw\workspace-agent1
+git clone https://github.com/<owner>/<repo>.git project
+
+# 创建 AGENTS.md（从模板复制）
+copy project\templates\agent1-AGENTS.md AGENTS.md
+```
+
+### 2.4 AGENTS.md 内容（Agent 1 专用）
+
+```markdown
+# Agent 1 — 总架构师
+
+## 你的唯一职责
+1. 读取 `project/00_input/` 里的需求
+2. 写架构方案到 `project/10_architecture/`
+3. 拆任务卡到 `project/20_tasks/`
+4. 读 `project/40_review/` 的审查报告
+5. 收到 review 打回时，修改架构，重新拆任务
+
+## 你能写的目录
+- `project/10_architecture/`
+- `project/20_tasks/`
+- `memory/`
+
+## 你不能碰的
+- 不要直接改 `00_input/`
+- 不要执行代码
+- 不要写 `30_execution/`
+- 不要写 `40_review/`
+
+## 每次启动前先读
+- `project/00_input/`（需求）
+- `project/40_review/`（审查反馈，如果有）
+- `memory/MEMORY.md`
+
+## 工作原则
+- 先定目标，再拆步骤，再分配任务
+- 每次只拆 2-3 个小任务
+- 需求变了要重新评估架构
+- 收到 review 打回时，先看审查意见再改
+
+## Git 操作
+- 每次写完文件后：`git add . && git commit -m "agent1: 架构/任务更新" && git push`
+- 每次开工前：`git pull`
+```
+
+### 2.5 创建 HEARTBEAT.md
+
+```markdown
+# Heartbeat Checklist (Agent 1 / 本地)
+
+## 每次心跳检查
+
+1. **git pull** 拉取最新代码
+2. **检查 00_input/** 是否有新需求
+3. **检查 40_review/** 是否有审查打回
+4. **有新需求？** → 写架构 → 拆任务卡 → git push
+5. **有打回？** → 修改架构 → 重新拆任务 → git push
+6. **都没事？** → HEARTBEAT_OK
+```
+
+### 2.6 启动
+
+```powershell
+openclaw gateway
+```
+
+---
+
+## 第三步：二哥（VM-0-7-ubuntu）— Agent 2 执行者
+
+### 3.1 当前状态
+
+- 系统：Ubuntu 24.04
+- Node.js：v22.22.2
+- OpenClaw：已安装（pnpm）
+- 渠道：飞书
+- Gateway 端口：20696
+- Gateway 进程：已有，需要重启
+
+### 3.2 配置 OpenClaw
+
+编辑 `~/.openclaw/openclaw.json`，确保以下配置：
+
+```json
+{
+  "agents": {
+    "defaults": {
+      "model": {
+        "primary": "claude/claude-sonnet-4-6"
+      },
+      "workspace": "/root/.openclaw/workspace-agent2",
+      "heartbeat": {
+        "every": "3m",
+        "target": "feishu",
+        "directPolicy": "allow",
+        "lightContext": true,
+        "isolatedSession": true,
+        "prompt": "Read HEARTBEAT.md if it exists (workspace context). Follow it strictly. Do not infer or repeat old tasks from prior chats. If nothing needs attention, reply HEARTBEAT_OK.",
+        "ackMaxChars": 300
+      }
+    }
+  },
+  "channels": {
+    "feishu": {
+      "enabled": true,
+      "appId": "cli_a94d2548eb21dcd3",
+      "appSecret": "h40WKiw5STFPR4PPprXVCbIYpgAS7WYc",
+      "domain": "feishu",
+      "heartbeat": {
+        "showOk": true,
+        "showAlerts": true,
+        "useIndicator": true
+      }
+    }
+  }
+}
+```
+
+### 3.3 创建 Agent 2 的 Workspace
+
+```bash
+# 创建 workspace 目录
+mkdir -p /root/.openclaw/workspace-agent2
+
+# clone 项目仓库
+cd /root/.openclaw/workspace-agent2
+git clone https://github.com/<owner>/<repo>.git project
+
+# 配置 git 凭证
+cd project
+git config user.name "agent-2"
+git config user.email "agent2@example.com"
+```
+
+### 3.4 AGENTS.md 内容（Agent 2 专用）
+
+```markdown
+# Agent 2 — 执行者
+
+## 你的唯一职责
+1. 读取 `project/20_tasks/` 中当前要执行的任务
+2. 参考 `project/00_input/` 和 `project/10_architecture/` 理解上下文
+3. 执行任务，把结果写到 `project/30_execution/`
+4. 写 HANDOFF.md（给 Agent 3 的交接说明）
+
+## 你能写的目录
+- `project/30_execution/`
+- `memory/`
+
+## 你不能碰的
+- 不要改 `00_input/`
+- 不要写 `10_architecture/`
+- 不要删除任务卡（Agent 3 删除）
+
+## 每次启动前先读
+- `project/20_tasks/`（当前任务）
+- `project/10_architecture/`（架构）
+- `project/00_input/`（原始需求）
+- `memory/MEMORY.md`
+
+## 工作原则
+- 严格按任务卡要求执行
+- 有不确定的地方写执行备忘注释
+- 完成后写清楚做了什么、没做什么
+- 不要偷偷扩大任务范围
+
+## Git 操作
+- 每次写完文件后：`git add . && git commit -m "agent2: 任务执行完成" && git push`
+- 每次开工前：`git pull`
+
+## HANDOFF.md 格式
+写到 `project/30_execution/HANDOFF.md`，包含：
+- 我做了什么
+- 没做什么
+- 哪些地方需要重点看
+- 哪些地方可能有问题
+```
+
+### 3.5 创建 HEARTBEAT.md
+
+```markdown
+# Heartbeat Checklist (Agent 2 / 二哥)
+
+## 每次心跳检查
+
+1. **git pull** 拉取最新代码
+2. **扫描 20_tasks/** 是否有新任务卡
+3. **有新任务？** → 执行 → 写 30_execution/ + HANDOFF.md → git push
+4. **30_execution/ 已有结果？** → 不重复执行，等 Agent 3 审查
+5. **更新日志** → memory/daily/$(date +%Y-%m-%d).md
+6. **没有就 HEARTBEAT_OK**
+```
+
+### 3.6 清理并重启 Gateway
+
+```bash
+# 1. 修复 cron jobs.json
+printf '{"version":1,"jobs":[]}' > ~/.openclaw/cron/jobs.json
+
+# 2. 杀掉旧的 gateway 进程
+pkill -f openclaw-gateway
+sleep 3
+
+# 3. 重启
+openclaw gateway --port 20696 &
+
+# 4. 等启动完成后，在飞书上发一条消息让 target: "last" 记住你的聊天
+# 5. 等 3 分钟看 heartbeat 能不能到飞书
+```
+
+### 3.7 验证
+
+```bash
+# 检查 heartbeat 是否启动
+cat /tmp/openclaw/openclaw-2026-03-29.log | grep -i heartbeat
+
+# 应该看到：
+# [heartbeat] started
+# heartbeat: {"intervalMs": 180000}
+```
+
+---
+
+## 第四步：三哥（VM-0-5-ubuntu）— Agent 3 审查者
+
+### 4.1 当前状态
+
+- 系统：Linux
+- 渠道：微信（openclaw-weixin）
+- 模型：openrouter/xiaomi/mimo-v2-pro
+
+### 4.2 配置 OpenClaw
+
+编辑 `~/.openclaw/openclaw.json`：
+
+```json
+{
+  "agents": {
+    "defaults": {
+      "model": {
+        "primary": "openrouter/xiaomi/mimo-v2-pro"
+      },
+      "workspace": "/root/.openclaw/workspace-agent3",
+      "heartbeat": {
+        "every": "5m",
+        "target": "last",
+        "directPolicy": "allow",
+        "lightContext": true,
+        "isolatedSession": true,
+        "prompt": "Read HEARTBEAT.md if it exists (workspace context). Follow it strictly. Do not infer or repeat old tasks from prior chats. If nothing needs attention, reply HEARTBEAT_OK.",
+        "ackMaxChars": 300
+      }
+    }
+  }
+}
+```
+
+**注意：不要在顶层放 `heartbeat` 键，必须放在 `agents.defaults.heartbeat` 下面。**
+
+### 4.3 创建 Agent 3 的 Workspace
+
+```bash
+# 创建 workspace 目录
+mkdir -p /root/.openclaw/workspace-agent3
+
+# clone 项目仓库
+cd /root/.openclaw/workspace-agent3
+git clone https://github.com/<owner>/<repo>.git project
+
+# 配置 git 凭证
+cd project
+git config user.name "agent-3"
+git config user.email "agent3@example.com"
+```
+
+### 4.4 AGENTS.md 内容（Agent 3 专用）
+
+```markdown
+# Agent 3 — 审查者
+
+## 你的唯一职责
+1. 读取 `project/00_input/`（原始需求）
+2. 读取 `project/10_architecture/`（架构方案）
+3. 读取 `project/20_tasks/`（任务卡）
+4. 读取 `project/30_execution/`（执行结果 + HANDOFF.md）
+5. 检查是否偏离需求，写审查报告到 `project/40_review/`
+6. 审查通过 → 删除对应 task 文件
+7. 审查不通过 → 写审查报告，通知 Agent 1
+
+## 你能写的目录
+- `project/40_review/`
+- `memory/`
+
+## 你不能碰的
+- 不要改 `10_architecture/`
+- 不要改 `30_execution/`
+- 不要改用户的需求
+
+## 每次启动前先读
+- `project/00_input/`（原始需求）
+- `project/10_architecture/`（架构）
+- `project/20_tasks/`（任务卡）
+- `project/30_execution/`（执行结果）
+- `memory/MEMORY.md`
+
+## 审查要点
+- 方向是否正确
+- 内容是否完整
+- 执行是否达标
+- 是否有遗漏、重复、偏离
+
+## Git 操作
+- 每次写完文件后：`git add . && git commit -m "agent3: 审查完成" && git push`
+- 每次开工前：`git pull`
+```
+
+### 4.5 创建 HEARTBEAT.md
+
+```markdown
+# Heartbeat Checklist (Agent 3 / 三哥)
+
+## 每次心跳检查
+
+1. **git pull** 拉取最新代码
+2. **扫描 projects/** 下所有项目
+3. **30_execution/ 有新文件？** → 触发完整审查流程：
+   - 读 00_input/（需求）
+   - 读 10_architecture/（架构）
+   - 读 20_tasks/（任务卡）
+   - 读 30_execution/（执行结果 + handoff）
+   - 写 40_review/review-YYYYMMDD-HHMM.md
+   - 审查通过 → 删 task 文件
+   - 审查不通过 → 写报告说明问题
+4. **没有就 HEARTBEAT_OK**
+```
+
+### 4.6 重启 Gateway
+
+```bash
+# 检查配置是否正确（不能有顶层 heartbeat 键）
+python3 -c "
+import json
+with open('/root/.openclaw/openclaw.json') as f:
+    d = json.load(f)
+if 'heartbeat' in d:
+    print('错误：heartbeat 在顶层，需要移到 agents.defaults 下')
+else:
+    print('配置正确')
+"
+
+# 重启 gateway
+pkill -f openclaw-gateway
+sleep 3
+openclaw gateway &
+
+# 在微信上发一条消息，让 target: "last" 记住你的聊天
+# 等 5 分钟看 heartbeat
+```
+
+---
+
+## 常见问题
+
+### Q: Heartbeat 消息发不出来（delivered: false）
+
+检查顺序：
+1. `openclaw.json` 里 heartbeat 的 `target` 是否正确（飞书用 `feishu`，微信用 `last`）
+2. 是否有 cron job 和 built-in heartbeat 冲突（删掉 cron job 只用 built-in）
+3. 重启后先在渠道上发一条消息，让 `target: "last"` 记住你的聊天
+
+### Q: Gateway 启动报 "already running under systemd"
+
+```bash
+pkill -f openclaw-gateway
+sleep 3
+openclaw gateway &
+```
+
+### Q: Cron jobs.json 解析失败
+
+```bash
+printf '{"version":1,"jobs":[]}' > ~/.openclaw/cron/jobs.json
+```
+
+### Q: 心跳频率建议
+
+| Agent | 建议频率 | 说明 |
+|-------|---------|------|
+| Agent 1（架构师） | 5 分钟 | 架构不需要频繁更新 |
+| Agent 2（执行者） | 3 分钟 | 有任务时尽快执行 |
+| Agent 3（审查者） | 5 分钟 | 等 Agent 2 写完再审查 |
+
+### Q: 任务锁
+
+如果同时有多个 Agent 要写同一个项目，在项目根目录放一个 `project-lock.md`：
+
+```markdown
+# Project Lock
+- 锁定者：Agent 2
+- 锁定时间：2026-03-29 12:00
+- 任务：task-001 执行中
+```
+
+---
+
+## 部署检查清单
+
+### 本地（Agent 1）
+- [ ] OpenClaw 安装完成
+- [ ] openclaw.json 配置正确（model, workspace, heartbeat）
+- [ ] 飞书渠道配置正确
+- [ ] workspace 目录创建，项目 clone 完成
+- [ ] AGENTS.md 写入（agent1 模板）
+- [ ] HEARTBEAT.md 写入
+- [ ] git 凭证配置（能 push）
+- [ ] Gateway 启动，飞书能收到消息
+- [ ] Heartbeat 能到飞书
+
+### 二哥（Agent 2）
+- [ ] OpenClaw 已安装
+- [ ] openclaw.json 配置正确（重点：heartbeat.target = "feishu"）
+- [ ] 没有冲突的 cron job（已清空）
+- [ ] workspace 目录创建，项目 clone 完成
+- [ ] AGENTS.md 写入（agent2 模板）
+- [ ] HEARTBEAT.md 写入
+- [ ] git 凭证配置（能 push）
+- [ ] Gateway 重启成功，飞书能收到消息
+- [ ] Heartbeat 能到飞书
+
+### 三哥（Agent 3）
+- [ ] openclaw.json 修复（heartbeat 不能在顶层）
+- [ ] openclaw.json 配置正确（heartbeat.target = "last"）
+- [ ] workspace 目录创建，项目 clone 完成
+- [ ] AGENTS.md 写入（agent3 模板）
+- [ ] HEARTBEAT.md 写入
+- [ ] git 凭证配置（能 push）
+- [ ] Gateway 重启成功，微信能收到消息
+- [ ] Heartbeat 能到微信
+
+### 整体验证
+- [ ] 三个 Agent 都能 git pull/push 同一个仓库
+- [ ] Agent 1 写了任务卡到 20_tasks/
+- [ ] Agent 2 检测到任务卡，执行后写到 30_execution/
+- [ ] Agent 3 检测到执行结果，写审查报告到 40_review/
+- [ ] Agent 3 审查通过后删除了 task 文件
+- [ ] Agent 1 看到审查结果，开始下一轮任务
+
+---
+
+## 目录速查
+
+| 机器 | Workspace | 渠道 | Heartbeat 频率 |
+|------|-----------|------|---------------|
+| 本地 | `C:\Users\25472\.openclaw\workspace-agent1` | 飞书 | 5m |
+| 二哥 | `/root/.openclaw/workspace-agent2` | 飞书 | 3m |
+| 三哥 | `/root/.openclaw/workspace-agent3` | 微信 | 5m |
+
+| 文件 | 谁写 | 谁读 |
+|------|------|------|
+| `00_input/` | 用户 | Agent 1, 2, 3 |
+| `10_architecture/` | Agent 1 | Agent 2, 3 |
+| `20_tasks/` | Agent 1 写，Agent 3 删 | Agent 2, 3 |
+| `30_execution/` | Agent 2 | Agent 3 |
+| `40_review/` | Agent 3 | Agent 1 |
