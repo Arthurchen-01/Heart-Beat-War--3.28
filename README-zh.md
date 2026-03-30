@@ -6,6 +6,80 @@
 - 2号：执行者，负责按任务产出结果
 - 3号：检验室，负责对照需求和架构指令做审查与总结
 
+## 必读更新：2026-03-30 之后的推荐工作模式
+
+上面那套“1号规划、2号执行、3号审查”的线性模型仍然能跑，但现在更推荐升级成下面这套：
+
+- **1号不是单点架构师，而是指挥中枢**。
+  它负责接收需求、调用自己的 subagent 做拆解、写任务包、决定下一步最小指令。
+- **2号不是一次性交付工位，而是执行部门**。
+  它也可以调用自己的 subagent，但对外只按最小单位多次执行，并持续回写状态报告给 1号。
+- **3号不是只看最终结果，而是质量与审计部门**。
+  它审当前批次、当前里程碑和风险，而不是只在最后给一个通过/打回。
+
+换句话说：
+
+- 每个 OpenClaw 实例都可以有自己的 subagent
+- 但每个实例仍然负责一个大的“部门范围”
+- 仓库只记录这些 subagent 周期的**外部可见结果**
+- 这样既保留灵活性，也能控制 token 消耗
+
+### 新的推荐控制循环
+
+1. 用户把目标给 1号
+2. 1号调用内部 subagent 做分析和拆解
+3. 1号写：
+   - 架构说明
+   - 任务卡
+   - 执行清单
+   - 测试计划
+4. 2号只完成当前最小的一步
+5. 2号写：
+   - 执行产物
+   - handoff
+   - status report
+6. 3号审查当前批次
+7. 3号告诉 1号下一步应该：
+   - 继续发下一小步
+   - 返工
+   - 关闭任务
+8. 1号再发下一个最小指令
+
+### 新的任务包结构
+
+推荐每个 `20_tasks/TASK-xxx/` 至少包含：
+
+- `task-card.md`
+- `execution-checklist.md`
+- `test-plan.md`
+
+推荐 `30_execution/` 至少包含：
+
+- 本轮产物
+- `HANDOFF.md`
+- `STATUS-REPORT.md`
+
+### 新的记忆结构
+
+每个 agent 的记忆建议明确分成三层：
+
+1. **短期记忆**：当前天、当前步、当前阻塞
+2. **中期记忆**：当前任务、当前里程碑、滚动总结
+3. **长期记忆**：稳定规则、项目结构、反复踩坑经验
+
+推荐目录：
+
+- `memory/agent-x/short-term/`
+- `memory/agent-x/mid-term/`
+- `memory/agent-x/long-term/`
+
+这样做的目的不是“多存文件”，而是：
+
+- 上下文丢了还能恢复
+- 人能随时查看
+- agent 不需要每次都重复读超长聊天
+- 长期降低 token 消耗
+
 ## 推荐原则
 
 1. **仓库是唯一真相源**。不要让三个 AI 靠聊天互相传话，所有协作都落到文件。
@@ -34,10 +108,12 @@
 ## 一个项目内部的推荐流转
 
 1. 你把需求和资源放进 `00_input/`
-2. 1号读取输入，产出 `10_architecture/` 与 `20_tasks/`
-3. 2号读取任务卡，产出 `30_execution/`
-4. 3号对照 `00_input/`、`10_architecture/`、`30_execution/` 产出 `40_review/`
-5. 1号每 30 分钟检查一次新输入、未关闭审查、阻塞项，然后更新任务卡
+2. 1号读取输入，调用内部 subagent 做拆解，产出 `10_architecture/` 与 `20_tasks/`
+3. 1号在 `20_tasks/` 中写明任务卡、执行清单、测试计划
+4. 2号读取任务包，只执行当前最小步骤，产出 `30_execution/`
+5. 2号补写 `HANDOFF.md` 与 `STATUS-REPORT.md`
+6. 3号对照 `00_input/`、`10_architecture/`、`20_tasks/`、`30_execution/` 产出 `40_review/`
+7. 1号根据 status report 和 review 决定下一条最小指令，而不是一次性发完整大任务
 
 ## 状态建议
 
@@ -60,15 +136,18 @@
 - `templates/requirement.md`：你写需求时用
 - `templates/architect-brief.md`：1号用
 - `templates/task-card.md`：1号发给 2号
+- `templates/execution-checklist.md`：1号定义 2号当前小步执行顺序
+- `templates/test-plan.md`：1号定义这一步怎么验收
 - `templates/execution-report.md`：2号回写
+- `templates/status-report.md`：2号告诉 1号“做完了什么、卡在哪里、下一步建议是什么”
 - `templates/review-report.md`：3号审查
 
 ## 记忆建议
 
-每个 agent 建议至少保留三层：
+每个 agent 建议明确保留三层：
 
-1. `daily/`：当天流水账
-2. `MEMORY.md`：长期有效的浓缩记忆
-3. `summaries/rolling-summary.md`：多轮执行后的压缩总结
+1. `short-term/`：当天流水账、当前任务、当前阻塞
+2. `mid-term/`：当前里程碑总结、滚动总结
+3. `long-term/`：长期有效的浓缩记忆
 
 这样做的目的是：避免上下文越来越长，导致 agent 变慢、跑偏、花费越来越高。

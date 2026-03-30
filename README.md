@@ -2,6 +2,38 @@
 
 三个 AI 协作框架：1号规划，2号执行，3号审查。
 
+## 必读更新：推荐改成“部门制 + subagent”
+
+旧模型仍可用，但现在更推荐：
+
+- 1号作为**指挥中枢**，内部可调用 subagent 做分析、拆解、排优先级
+- 2号作为**执行部门**，内部可调用 subagent 做小步实现和检查
+- 3号作为**质量与审计部门**，内部可调用 subagent 做审查和风险分析
+
+核心思想：
+
+- 不把每个 OpenClaw 限死成一个窄动作
+- 而是给每个 OpenClaw 一个大的部门职责范围
+- 所有内部 subagent 周期的外部结果都落到仓库文件
+
+推荐任务包结构：
+
+- `task-card.md`
+- `execution-checklist.md`
+- `test-plan.md`
+
+推荐执行回写：
+
+- 产物文件
+- `HANDOFF.md`
+- `STATUS-REPORT.md`
+
+推荐记忆结构：
+
+- `memory/agent-x/short-term/`
+- `memory/agent-x/mid-term/`
+- `memory/agent-x/long-term/`
+
 ## 核心角色
 
 - **1号**：架构师。读需求，写架构，发任务卡。
@@ -22,11 +54,11 @@
 ### 任务生命周期
 
 ```
-1号：读 00_input/ → 写 10_architecture/ → 发 20_tasks/
-2号：读 20_tasks/ → 执行 → 写 30_execution/（含 HANDOFF.md）
-3号：读 1号指令 + 2号结果 + handoff → 写 40_review/
-     ├── 通过 → 删 task，汇报 1号
-     └── 不通过 → 打回，1号更新 architecture，发新 task
+1号：读 00_input/ → 调用内部 subagent 拆解 → 写 10_architecture/ → 发 20_tasks/
+2号：读 20_tasks/ → 只做当前最小步骤 → 写 30_execution/（含 HANDOFF.md 和 STATUS-REPORT.md）
+3号：读 1号指令 + 2号结果 + handoff + status → 写 40_review/
+     ├── 通过当前批次 → 告诉 1号发下一小步，必要时删 task
+     └── 不通过 → 打回，1号更新 architecture / checklist / test plan
 ```
 
 ### 角色分工
@@ -70,16 +102,16 @@
 
 ### 记忆
 
-每个 agent 保留三层：
-1. `daily/`：当天流水账
-2. `MEMORY.md`：长期浓缩记忆
-3. `summaries/rolling-summary.md`：多轮执行后压缩
+每个 agent 建议明确保留三层：
+1. `short-term/`：当天流水账、当前阻塞、临时发现
+2. `mid-term/`：当前任务/里程碑总结、滚动摘要
+3. `long-term/`：长期浓缩记忆、稳定规则、反复踩坑
 
 ---
 
 ## 一句话总结
 
-**Architecture 是长期控制面，Task 是一次性调度票据。**
+**Architecture 是长期控制面，Task Packet 是一次性调度票据，Status Report 是回传给 1号的下一步依据。**
 
 ## 部署
 
