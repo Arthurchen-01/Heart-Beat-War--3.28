@@ -40,6 +40,7 @@ If you want to run this as a real multi-machine system rather than only reuse th
 
 - `PRACTICAL-RUNBOOK.md`
 - `TESTING-DEBUG-THREATS.md`
+- `FEISHU-GROUP-DRILL.md`
 - `scripts/OpenClaw-Validate-Reset.ps1`
 - `config/OpenClaw-Hosts.example.ps1`
 
