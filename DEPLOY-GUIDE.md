@@ -107,6 +107,25 @@
 - `PRACTICAL-RUNBOOK.md`
 - `TESTING-DEBUG-THREATS.md`
 
+## 一键校验 / 重置脚本
+
+仓库内置了一个适合 Windows 控制机的入口脚本：
+
+```powershell
+Copy-Item .\config\OpenClaw-Hosts.example.ps1 .\config\OpenClaw-Hosts.local.ps1
+.\scripts\OpenClaw-Validate-Reset.ps1 -Action Validate
+.\scripts\OpenClaw-Validate-Reset.ps1 -Action Apply
+.\scripts\OpenClaw-Validate-Reset.ps1 -Action Reset
+```
+
+说明：
+
+- `Validate`：只校验本地、二号机、三号机当前状态
+- `Apply`：按清单修正 workspace、角色、Feishu 配置并重启 gateway
+- `Reset`：先备份旧 workspace，再重建标准运行态
+- 实际密码、PAT、飞书密钥必须写进 `config/OpenClaw-Hosts.local.ps1`
+- `config/OpenClaw-Hosts.local.ps1` 已在 `.gitignore` 中忽略，不应提交
+
 ---
 
 ## 架构总览
