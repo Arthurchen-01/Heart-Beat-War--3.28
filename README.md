@@ -34,6 +34,13 @@
 - `memory/agent-x/mid-term/`
 - `memory/agent-x/long-term/`
 
+## Practical Docs
+
+If you want to run this as a real multi-machine system rather than only reuse the templates, read:
+
+- `PRACTICAL-RUNBOOK.md`
+- `TESTING-DEBUG-THREATS.md`
+
 ## 核心角色
 
 - **1号**：架构师。读需求，写架构，发任务卡。
